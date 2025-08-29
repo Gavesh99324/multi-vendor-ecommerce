@@ -1,11 +1,26 @@
 import asyncHandler from 'express-async-handler';
+import Order from '../models/Order.js';
+import Product from '../models/Product.js';
+import { charge } from '../services/paymentService.js';
+import { sendEmail } from '../services/emailService.js';
+import { requireFields } from '../utils/validators.js';
+
+
+export const createOrder = asyncHandler(async (req, res) => {
+requireFields(['items', 'shippingAddress'], req.body);
+const items = req.body.items; // [{ product, quantity }]
+if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ message: 'No items' });
+
+
+// Load products & group by vendor (simple: one vendor per order request here)
+const products = await Product.find({ _id: { $in: items.map(i => i.product) }, isActive: true }).populate('vendor');
+if (products.length !== items.length) return res.status(400).json({ message: 'Some items invalid' });
 
 
 const vendorId = products[0].vendor._id.toString();
 if (products.some(p => p.vendor._id.toString() !== vendorId)) {
 return res.status(400).json({ message: 'Items must be from same vendor per order request' });
 }
-
 
 // Compute totals & check stock
 let subtotal = 0;
@@ -47,24 +62,23 @@ await sendEmail({ to: 'customer@example.com', subject: 'Order Confirmation', htm
 res.status(201).json(order);
 });
 
-
 export const myOrders = asyncHandler(async (req, res) => {
-const orders = await Order.find({ customer: req.user.id }).sort('-createdAt');
-res.json(orders);
-});
-
-
-export const vendorOrders = asyncHandler(async (req, res) => {
-const orders = await Order.find({ vendor: req.user.id }).sort('-createdAt');
-res.json(orders);
-});
-
-
-export const updateOrderStatus = asyncHandler(async (req, res) => {
-const order = await Order.findOne({ _id: req.params.id, vendor: req.user.id });
-if (!order) return res.status(404).json({ message: 'Order not found' });
-const allowed = ['pending', 'paid', 'shipped', 'delivered', 'cancelled'];
-if (!allowed.includes(req.body.status)) return res.status(400).json({ message: 'Invalid status' });
-order.status = req.body.status; await order.save();
-res.json(order);
-});
+  const orders = await Order.find({ customer: req.user.id }).sort('-createdAt');
+  res.json(orders);
+  });
+  
+  
+  export const vendorOrders = asyncHandler(async (req, res) => {
+  const orders = await Order.find({ vendor: req.user.id }).sort('-createdAt');
+  res.json(orders);
+  });
+  
+  
+  export const updateOrderStatus = asyncHandler(async (req, res) => {
+  const order = await Order.findOne({ _id: req.params.id, vendor: req.user.id });
+  if (!order) return res.status(404).json({ message: 'Order not found' });
+  const allowed = ['pending', 'paid', 'shipped', 'delivered', 'cancelled'];
+  if (!allowed.includes(req.body.status)) return res.status(400).json({ message: 'Invalid status' });
+  order.status = req.body.status; await order.save();
+  res.json(order);
+  });

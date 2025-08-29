@@ -43,3 +43,4 @@ return bcrypt.compare(candidate, this.password);
 
 
 export default mongoose.model('User', userSchema);
+
